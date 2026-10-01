@@ -37,10 +37,10 @@ class CodeGenerator:
         self.program.main = main
         self.current = main
         self._locals = set()
-        # 全局变量：顶层 var 声明
+        # 全局变量：顶层 var 声明（含 for 初始化子句与顶层控制流块内的声明）
         for decl in program.declarations:
-            if isinstance(decl, ast.VarDecl):
-                self._locals.add(decl.name)
+            if isinstance(decl, ast.Stmt):
+                self._collect_locals_stmt(decl)
             elif isinstance(decl, ast.FunctionDecl):
                 self._locals.add(decl.name)
         self.program.global_names = sorted(self._locals)
@@ -76,20 +76,32 @@ class CodeGenerator:
         return fc
 
     def _collect_locals(self, block: ast.Block):
+        """收集本代码段内静态声明的局部变量名。
+
+        顶层（<main>）与函数体都走这里：除直接出现的 var 声明外，还要覆盖
+        for 初始化子句以及 if/while/for/嵌套块里的 var 声明，否则这些变量
+        会被误判为非局部而生成 LOAD_GLOBAL/STORE_GLOBAL，错误地泄漏到全局。
+        """
         for s in block.statements:
-            if isinstance(s, ast.VarDecl):
-                self._locals.add(s.name)
-            elif isinstance(s, ast.Block):
-                self._collect_locals(s)
-            elif isinstance(s, ast.IfStmt):
-                for _, body in s.branches:
-                    self._collect_locals(body)
-                if s.else_block:
-                    self._collect_locals(s.else_block)
-            elif isinstance(s, ast.WhileStmt):
-                self._collect_locals(s.body)
-            elif isinstance(s, ast.ForStmt):
-                self._collect_locals(s.body)
+            self._collect_locals_stmt(s)
+
+    def _collect_locals_stmt(self, s):
+        if isinstance(s, ast.VarDecl):
+            self._locals.add(s.name)
+        elif isinstance(s, ast.Block):
+            for x in s.statements:
+                self._collect_locals_stmt(x)
+        elif isinstance(s, ast.IfStmt):
+            for _, body in s.branches:
+                self._collect_locals(body)
+            if s.else_block:
+                self._collect_locals(s.else_block)
+        elif isinstance(s, ast.WhileStmt):
+            self._collect_locals(s.body)
+        elif isinstance(s, ast.ForStmt):
+            if s.init:
+                self._collect_locals_stmt(s.init)
+            self._collect_locals(s.body)
 
     # ------------------------------------------------------------------
     # 语句

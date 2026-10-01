@@ -240,11 +240,11 @@ class VM:
                 self._name_error(ins, frame)
         elif op == bc.OP_STORE_VAR:
             v = s.pop()
-            if ins.operand in frame.locals:
-                frame.locals[ins.operand] = v
-                if frame.is_main:
-                    self.globals[ins.operand] = v
-            else:
+            # 帧局部变量：首次存储时即在本帧建立绑定。
+            # <main> 帧承载模块顶层代码，其顶层声明同时属于全局作用域，
+            # 因此在写入帧局部表之外镜像一份到 globals（函数帧据此读取全局变量）。
+            frame.locals[ins.operand] = v
+            if frame.is_main:
                 self.globals[ins.operand] = v
         elif op == bc.OP_LOAD_GLOBAL:
             if ins.operand in self.globals:

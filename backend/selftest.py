@@ -51,6 +51,7 @@ def run_all():
     _test_lists()
     _test_runtime_errors()
     _test_debugger()
+    _test_scope_attribution()
     _test_profiler()
     _test_memory_model()
     _test_storage()
@@ -180,6 +181,31 @@ def _test_debugger():
     snap3 = dbg.snapshot()
     ok_finish = snap3["finished"] is True and vm.output == ["3"]
     _check("调试器：继续运行到程序结束", ok_finish, str(vm.output))
+
+
+def _test_scope_attribution():
+    # 顶层 var 声明必须同时出现在 <main> 帧的局部变量与全局变量中，
+    # 而不能只落到全局（作用域归属回归用例）。
+    src = "var x = 1;\nvar y = 2;\nprint(x + y);"
+    res = compiler.compile_source(src)
+    vm = vm_mod.VM(res.bytecode, res.source_lines)
+    dbg = debugger_mod.Debugger(vm, {3})
+    dbg.start()
+    snap = dbg.snapshot()
+    frames = snap["call_stack"]
+    main_frame = next((f for f in frames if f.get("is_main")), frames[-1])
+    ok = set(main_frame.get("locals", {})) >= {"x", "y"}
+    _check("作用域归属：顶层声明属于 <main> 帧的局部变量", ok,
+           str({f["function"]: list(f["locals"]) for f in frames}) if not ok else "")
+
+    # 函数内 for 初始化变量必须是函数局部变量，不得泄漏到全局
+    src2 = "func f() { for (var j = 0; j < 2; j = j + 1) { print(j); } }\nf();"
+    res2 = compiler.compile_source(src2)
+    vm2 = vm_mod.VM(res2.bytecode, res2.source_lines)
+    vm2.start(); vm2.run()
+    ok2 = "j" not in vm2.globals and vm2.output == ["0", "1"]
+    _check("作用域归属：函数内循环变量不泄漏到全局", ok2,
+           f"globals={sorted(vm2.globals)} output={vm2.output}" if not ok2 else "")
 
 
 def _test_profiler():
