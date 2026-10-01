@@ -37,12 +37,14 @@ class CodeGenerator:
         self.program.main = main
         self.current = main
         self._locals = set()
-        # 全局变量：顶层 var 声明
+        # 全局变量：顶层 var 声明（含控制流内嵌声明，如 for 初始化语句）
         for decl in program.declarations:
             if isinstance(decl, ast.VarDecl):
                 self._locals.add(decl.name)
             elif isinstance(decl, ast.FunctionDecl):
                 self._locals.add(decl.name)
+            elif isinstance(decl, ast.Stmt):
+                self._collect_stmt_locals(decl)
         self.program.global_names = sorted(self._locals)
 
         # 2) 先注册所有函数（生成各自 FunctionCode），支持互相调用
@@ -77,19 +79,25 @@ class CodeGenerator:
 
     def _collect_locals(self, block: ast.Block):
         for s in block.statements:
-            if isinstance(s, ast.VarDecl):
-                self._locals.add(s.name)
-            elif isinstance(s, ast.Block):
-                self._collect_locals(s)
-            elif isinstance(s, ast.IfStmt):
-                for _, body in s.branches:
-                    self._collect_locals(body)
-                if s.else_block:
-                    self._collect_locals(s.else_block)
-            elif isinstance(s, ast.WhileStmt):
-                self._collect_locals(s.body)
-            elif isinstance(s, ast.ForStmt):
-                self._collect_locals(s.body)
+            self._collect_stmt_locals(s)
+
+    def _collect_stmt_locals(self, s: ast.Stmt):
+        """收集一条语句（及其嵌套子语句）里声明的局部变量名。"""
+        if isinstance(s, ast.VarDecl):
+            self._locals.add(s.name)
+        elif isinstance(s, ast.Block):
+            self._collect_locals(s)
+        elif isinstance(s, ast.IfStmt):
+            for _, body in s.branches:
+                self._collect_locals(body)
+            if s.else_block:
+                self._collect_locals(s.else_block)
+        elif isinstance(s, ast.WhileStmt):
+            self._collect_locals(s.body)
+        elif isinstance(s, ast.ForStmt):
+            if s.init:
+                self._collect_stmt_locals(s.init)
+            self._collect_locals(s.body)
 
     # ------------------------------------------------------------------
     # 语句

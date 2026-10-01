@@ -174,6 +174,21 @@ def _test_debugger():
     ok_step = not vm.finished and snap2["call_stack"]
     _check("调试器：单步跳过推进到下一行", ok_step)
 
+    # 作用域归属：顶层声明的变量必须出现在 main 帧的局部变量中，
+    # 而不是只挂在全局变量区。断在循环体行时 total 与 for 初始化的 i 均已赋值。
+    vm_s = vm_mod.VM(res.bytecode, res.source_lines)
+    dbg_s = debugger_mod.Debugger(vm_s, {3})
+    dbg_s.start()
+    snap_s = dbg_s.snapshot()
+    main_frame = next(f for f in snap_s["call_stack"] if f["function"] == "<main>")
+    ok_scope = ("total" in main_frame["locals"] and "i" in main_frame["locals"]
+                and "total" in snap_s["globals"])
+    _check("调试器：顶层变量（含 for 初始化变量）属于 main 帧局部", ok_scope,
+           f"locals={list(main_frame['locals'])} globals={list(snap_s['globals'])}"
+           if not ok_scope else "")
+    dbg_s.clear_breakpoints()
+    dbg_s.continue_()
+
     # 清除断点后继续到结束（否则 for 行断点会每轮迭代重新命中）
     dbg.clear_breakpoints()
     dbg.continue_()

@@ -240,11 +240,11 @@ class VM:
                 self._name_error(ins, frame)
         elif op == bc.OP_STORE_VAR:
             v = s.pop()
-            if ins.operand in frame.locals:
-                frame.locals[ins.operand] = v
-                if frame.is_main:
-                    self.globals[ins.operand] = v
-            else:
+            # STORE_VAR 一律写入当前帧的局部变量表；顶层 main 帧的变量同时
+            # 镜像进 globals，使函数内可按全局名访问（函数提升之外的全局数据）。
+            # 否则首次赋值只落进 globals，快照里顶层变量就不再是 main 帧的局部变量。
+            frame.locals[ins.operand] = v
+            if frame.is_main:
                 self.globals[ins.operand] = v
         elif op == bc.OP_LOAD_GLOBAL:
             if ins.operand in self.globals:
